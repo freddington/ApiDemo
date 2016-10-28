@@ -1,5 +1,3 @@
-# Latest code from the demo will be uploaded over the weekend (29/10 Oct 16)
-
 # ApiDemo
 
 A demo of a SQL-based weather API in PowerShell. This accepts API queries and returns JSON-formatted weather forecasts.
