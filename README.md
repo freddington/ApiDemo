@@ -2,9 +2,9 @@
 
 # ApiDemo
 
-A demo of an API in PowerShell.
+A demo of a SQL-based weather API in PowerShell. This accepts API queries and returns JSON-formatted weather forecasts.
 
-This is not hevaily developed, it's just an indication of what is possible. It uses SQLite as a backend and HttpListener as a frontend and it parses API queries (I started working on parsing POST with JSON body but ran out of time). To be clear, this is for fun - just because you CAN do something doesn't mean you SHOULD.
+This is not heavily developed, it's just an indication of what is possible. It uses SQLite as a backend and HttpListener as a frontend and it parses API queries (I started working on parsing POST with JSON body but ran out of time). To be clear, this is for fun - just because you CAN do something doesn't mean you SHOULD.
 
 The real-world applicability of this might actually be to get metrics or perform management actions on a box, or if you look at my "Pacman" repo you'll see I serve a PAC file to the local machine over this web server. For that purpose it's fine.
 
@@ -69,8 +69,10 @@ I didn't fit this into my talk, but there are some caveats. Somehting like this 
 
 # Dependencies
 
-SQLite
-https://sqlite.org/download.html
-
 SQLite PowerShell Provider
 https://psqlite.codeplex.com/
+
+
+SQLite
+https://sqlite.org/download.html
+*This is not strictly required, but useful for hacking and very easy to use.*
