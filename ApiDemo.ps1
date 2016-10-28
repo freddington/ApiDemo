@@ -1,14 +1,18 @@
-﻿sl $PSScriptRoot
+﻿begin {
+
+    sl $PSScriptRoot
     
 
-$Help = @'
+    $Help = @'
     Documentation:
     Accepts URLs in the format
-        <hostname or IP>/deadbeefdeadbeef/forecast=f1day
+        <hostname or IP>/deadbeefdeadbeef?forecast=1day&key=value
 
 '@
 
- 
+
+                                                                                                                                                                                                                                            <#
+
 $BuildString = @'
 
 CREATE TABLE Logins (
@@ -87,159 +91,146 @@ function SQL {Invoke-Item DB:\ -SQL ($args -join " ")}
 
 SQL $BuildString
 
+    #>
 
+    .\BuildMockSQLiteDB.ps1
 
-
-
-function Parse-ApiCall {
-    param ($Query)
-
-    if ($Query -like "/foo") {
-        return "bar"
+    function Parse-ApiCall {
+        param(
+            $Query,
+            $Method,
+            $Body
+        )
+        .\Parse-ApiCall.ps1 @PSBoundParameters
     }
-
-
-    $QueryTokens = $Query -split "\?"
-    $ApiKey = $QueryTokens[0] -replace "^/"
-
-    $QueryTokens2 = $QueryTokens[1] -split "&"
-    $SqlQuery = @{}
-    $QueryTokens2 | %{
-        $Subtokens = $_ -split '='
-        $SqlQuery += @{$Subtokens[0]=$Subtokens[1]}
-    }
-
-
-    #More typical, but you annoyingly need to select the UserID property on the $UserID object
-    #$UserID = Invoke-Item DB:\ -Sql "SELECT UserID FROM Logins WHERE ApiKey='d12831d5-2a0f-4467-a94d-56e7e8be92d7'"
-
-
-    #$Login = Get-ChildItem DB:\Logins -Filter "Apikey='d12831d5-2a0f-4467-a94d-56e7e8be92d7'"
-    $Login = Get-ChildItem DB:\Logins -Filter "Apikey='$ApiKey'"
-
-    if (-not $Login) {return "Invalid API key"}
-
-
-
-    #Use provided location or, if not provided, default location from user profile
-    if ($SqlQuery.ContainsKey("Location")) {
-        $Location = Get-ChildItem DB:\Logins -Filter "LocationName='$($SqlQuery.Location)'"
-    } else {
-        $UserProfile = Get-ChildItem DB:\UserProfiles -Filter "UserID='$($Login.UserID)'"
-        $Location = Get-ChildItem DB:\Locations -Filter "LocationID='$($UserProfile.LocationID)'"
-    }
-
-
-    #Use provided forecast period or, if not provided, default
-    if ($SqlQuery.ContainsKey("ForecastPeriod")) {
-        $ForecastPeriod = Get-ChildItem DB:\ForecastPeriods -Filter "ForecastPeriodID='$($SqlQuery.ForecastPeriod)'"
-    } else {
-        $ForecastPeriod = Get-ChildItem DB:\ForecastPeriods -Filter "ForecastPeriodID='1day'"
-    }
-
-
-
-    #Get the record we want
-    $Forecast = Get-ChildItem DB:\Forecasts -Filter "LocationID='$($Location.LocationID)' AND ForecastPeriodID='$($ForecastPeriod.ForecastPeriodID)'"
-
-    return $Forecast | select ForecastPeriodID, Prediction
-
-
-}
 
 
 
 
 
     
-#intialise web server
-$Binding = [uri]"http://127.0.0.1:8080"
-$Listener = New-Object System.Net.HttpListener
-$Listener.Prefixes.Add($Binding.AbsoluteUri)
+    #intialise web server
+    $Binding = [uri]"http://127.0.0.1:8080"
+    $Listener = New-Object System.Net.HttpListener
+    $Listener.Prefixes.Add($Binding.AbsoluteUri)
 
 
-try {
-    $Listener.Start()
-} catch [System.Net.HttpListenerException] {
-    #Already running on this binding, so quit
-    if ($_.Exception -like "*conflicts with an existing registration on the machine.*") {
+    try {
+        $Listener.Start()
+    } catch [System.Net.HttpListenerException] {
+        #Already running on this binding, so quit
+                    if ($_.Exception -like "*conflicts with an existing registration on the machine.*") {
         Write-Host "Binding $Binding is already in use"
         return
     }
+    }
+
+    Write-Host "Listening at $($Binding.AbsoluteUri)..."
+
+
+
 }
-
-Write-Host "Listening at $($Binding.AbsoluteUri)..."
-
+process{
 
 
 
+    while ($Listener.IsListening) {
+        
+        $Buffer = $null
+        $Body = $null
+        $BodyString = $null
+        
+        $Context = $Listener.GetContext()
+        $RequestUrl = $Context.Request.Url
+        $Response = $Context.Response
+    
+        #We are using the "virtual dir" as part of our API schema
+        #$RequestQuery = $RequestUrl.Query
+        $RequestQuery = $RequestUrl.PathAndQuery
 
 
-
-while ($Listener.IsListening) {
-
-    $Context = $Listener.GetContext()
-    $RequestUrl = $Context.Request.Url
-    $Response = $Context.Response
-    $RequestQuery = $RequestUrl.PathAndQuery
+        Write-Host ''
+        Write-Host "> $RequestUrl"
 
 
-    Write-Host ''
-    Write-Host "> $RequestUrl"
-
-
-    #Prepare content based on query
-    switch ($RequestQuery) {
-        '/end' {
-            #$Response.Close()
-            $Listener.Stop()
-            return
+        #Parse the body if it exists (i.e. if it's a POST)
+        if ($Context.Request.HasEntityBody) {
+            [System.IO.Stream]$BodyStream = $Context.Request.InputStream
+            [System.Text.Encoding]$BodyEncoding = $Context.Request.ContentEncoding
+            [System.IO.StreamReader]$BodyReader = New-Object System.IO.StreamReader ($BodyStream, $BodyEncoding)
+            $BodyString = $BodyReader.ReadToEnd()
+            $BodyStream.Close();
+            $BodyReader.Close();
+            $Body = ConvertFrom-Json $BodyString
         }
 
-        '/DB' {
+
+        #Prepare content based on query
+        switch ($RequestQuery) {
+            '/end' {
+                $Response.Close()
+                $Listener.Stop()
+                return
+            }
+
+                    '/DB' {
             $Content = Get-PSDrive DB
 
         }
 
-        '/help' {
+                    '/help' {
             $Content = $Help
         }
 
 
-        default {
-            $Content = ConvertTo-Json (Parse-ApiCall $RequestQuery) -Depth 10 #-Compress
+            default {
+                $Splat = @{
+                    Query = $RequestQuery;
+                    Method = $Context.Request.HttpMethod;
+                    Body = $Body
+                }
+                $Content = ConvertTo-Json (Parse-ApiCall @Splat) -Depth 10 #-Compress
+                #$Content = $Body | Out-String
 
+            }
         }
-    }
 
 
-    #serve the content
-    if ($Content) {
-        $Buffer = [System.Text.Encoding]::UTF8.GetBytes($Content)
+
+
+
+        #serve the content
+        if ($Content) {
+            $Buffer = [System.Text.Encoding]::UTF8.GetBytes($Content)
         
-    } else {
-        #if $Content is null, the encoding to UTF8 will throw, and $Buffer will still hold data from last request
-        $Buffer = [byte[]]@()
+        } else {
+            #if $Content is null, the encoding to UTF8 will throw, and $Buffer will still hold data from last request
+            $Buffer = [byte[]]@()
+        }
+
+        $Response.AddHeader("ContentType", "text/plain")
+        $Response.AddHeader("Accept-Ranges", "bytes")
+        $Response.ContentLength64 = $Buffer.Length
+        $Response.OutputStream.Write($Buffer, 0, $Buffer.Length)
+
+
+        #close
+        $Response.Close()
+
+        $ResponseStatus = $Response.StatusCode
+        Write-Host "< $ResponseStatus"
+
+
     }
 
-    $Response.AddHeader("ContentType", "text/plain")
-    $Response.AddHeader("Accept-Ranges", "bytes")
-    $Response.ContentLength64 = $Buffer.Length
-    $Response.OutputStream.Write($Buffer, 0, $Buffer.Length)
 
-
-    #close
-    $Response.Close()
-
-    $ResponseStatus = $Response.StatusCode
-    Write-Host "< $ResponseStatus"
 
 
 }
 
+end {
 
+    $Response.Close()
+    $Listener.Dispose()
 
-
-
-$Response.Close()
-$Listener.Dispose()
+}
